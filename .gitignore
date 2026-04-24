@@ -1,8 +1,5 @@
 # Các file dump rác
 dump.txt
 
-# Các file binary login blob
-login_blob_*.bin
-
 # Các file binary khác
 *.bin
