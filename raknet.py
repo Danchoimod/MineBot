@@ -27,12 +27,13 @@ class RakNetProtocol:
     # Custom Minebot bypass (if any)
     ID_CUSTOM_DIRECT_BYPASS = 0x00
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, bot_name="PhuBot"):
         self.host = host
         self.port = port
+        self.bot_name = bot_name
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(1.0)
-        self.client_guid = 1234567890123456 # Random 8-byte GUID
+        self.client_guid = int(time.time() * 1000) % 10000000000  # Unique GUID based on time
         self.state = 1
         self.last_send_time = 0
 
@@ -190,9 +191,19 @@ class RakNetProtocol:
         with open(blob_path, "rb") as f:
             blob = f.read()
 
+        # DYNAMICALLY CHANGE BOT NAME
+        original_name_str = struct.pack(">H", 7) + b"Minebot"
+        new_name_str = struct.pack(">H", len(self.bot_name)) + self.bot_name.encode('utf-8')
+        
+        if original_name_str in blob:
+            blob = blob.replace(original_name_str, new_name_str)
+            logger.info(f"Successfully changed bot name to: {self.bot_name}")
+        else:
+            logger.warning("Could not find 'Minebot' string in the login blob!")
+
         chunk_size = 1432
         split_count = (len(blob) + chunk_size - 1) // chunk_size
-        split_id = 1234  # Random ID
+        split_id = int(time.time()) % 65535
 
         logger.info(f"Splitting 16KB Login Blob into {split_count} packets...")
         
