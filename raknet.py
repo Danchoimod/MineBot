@@ -36,6 +36,7 @@ class RakNetProtocol:
         self.client_guid = int(time.time() * 1000) % 10000000000  # Unique GUID based on time
         self.state = 1
         self.last_send_time = 0
+        self.last_ping_time = 0
 
     def send_packet(self, packet):
         logger.debug(f"[RAW] Sending packet ID: 0x{packet[0]:x}, size: {len(packet)} to {self.host}:{self.port}")
@@ -156,16 +157,27 @@ class RakNetProtocol:
     def handle_encapsulated(self, payload):
         pid = payload[0]
         if pid == 0x10:
+            if self.state >= 6:
+                logger.debug("Already connected, ignoring duplicate 0x10")
+                return
             logger.info("Received Connection Request Accepted (0x10)!")
             self.send_new_incoming_connection()
         elif pid == 0x13:
             pass # We don't care
+        elif pid == 0x15:
+            logger.warning("Received Disconnect Notification (0x15) from server.")
+            self.state = 1 # Reset state to try reconnecting if main loop allows
         elif pid == 0x00:
             ping_time = payload[1:9]
             pong = struct.pack(">B", 0x03) + ping_time + struct.pack(">Q", int(time.time() * 1000))
             self.send_encapsulated(pong)
         else:
             logger.debug(f"Received Encapsulated Packet ID: 0x{pid:x}")
+
+    def send_connected_ping(self):
+        # ID 0x00 + 8 bytes timestamp
+        payload = struct.pack(">BQ", 0x00, int(time.time() * 1000))
+        self.send_encapsulated(payload)
 
     def send_new_incoming_connection(self):
         logger.info("Sending New Incoming Connection (0x13)...")
@@ -247,6 +259,13 @@ class RakNetProtocol:
         elif self.state == 4 and now - self.last_send_time > 2.0:
             logger.warning("Timeout waiting for Reply 2. Resending Request 2...")
             self.request_2(self.server_guid, self.mtu)
+        elif self.state == 5 and now - self.last_send_time > 3.0:
+            logger.warning("Timeout waiting for Connection Request Accepted. Resending...")
+            self.send_connection_request()
+            self.last_send_time = now
+        elif self.state >= 6 and now - self.last_ping_time > 1.0:
+            self.send_connected_ping()
+            self.last_ping_time = now
 
         try:
             data, addr = self.sock.recvfrom(2048)
